@@ -1,0 +1,582 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Health Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+
+      body {
+        background: #f0f4f8;
+        color: #1e293b;
+        font-family: 'Rajdhani', Arial, sans-serif;
+        min-height: 100vh;
+        overflow-x: hidden;
+      }
+
+      header {
+        position: relative;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 36px;
+        background: #ffffff;
+        border-bottom: 1.5px solid #e2e8f0;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      }
+
+      .header-left { display: flex; align-items: center; gap: 14px; }
+
+      .logo-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: #dcfce7;
+        border: 2px solid #22c55e;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+      }
+
+      .header-title h1 {
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 3px;
+        color: #15803d;
+        text-transform: uppercase;
+      }
+
+      .header-title p {
+        font-size: 11px;
+        color: #94a3b8;
+        letter-spacing: 2px;
+        font-family: 'Share Tech Mono', monospace;
+      }
+
+      .header-right { display: flex; align-items: center; gap: 24px; }
+
+      .live-badge {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #dcfce7;
+        border: 1.5px solid #86efac;
+        padding: 5px 14px;
+        border-radius: 20px;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 2px;
+        color: #15803d;
+      }
+
+      .live-dot {
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        background: #22c55e;
+        animation: blink 1s ease-in-out infinite;
+      }
+
+      @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50%       { opacity: 0.2; }
+      }
+
+      #clock {
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 15px;
+        color: #64748b;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        padding: 5px 12px;
+        border-radius: 8px;
+      }
+
+      #alert-banner {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 13px;
+        background: #fef2f2;
+        border-bottom: 2px solid #ef4444;
+        font-size: 17px;
+        font-weight: 700;
+        letter-spacing: 3px;
+        color: #b91c1c;
+        text-transform: uppercase;
+      }
+
+      #alert-banner.show { display: flex; }
+
+      main {
+        position: relative;
+        z-index: 1;
+        padding: 24px 32px;
+        display: flex;
+        flex-direction: column;
+        gap: 22px;
+      }
+
+      .stat-strip {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+      }
+
+      .stat-card {
+        background: #ffffff;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 18px 22px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        border-left-width: 5px;
+      }
+
+      .stat-card.hr   { border-left-color: #ef4444; }
+      .stat-card.temp { border-left-color: #f59e0b; }
+      .stat-card.spo  { border-left-color: #3b82f6; }
+      .stat-card.bp   { border-left-color: #a855f7; }
+
+      .stat-icon {
+        font-size: 26px;
+        width: 52px;
+        height: 52px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 12px;
+        flex-shrink: 0;
+      }
+
+      .stat-card.hr   .stat-icon { background: #fef2f2; }
+      .stat-card.temp .stat-icon { background: #fffbeb; }
+      .stat-card.spo  .stat-icon { background: #eff6ff; }
+      .stat-card.bp   .stat-icon { background: #faf5ff; }
+
+      .stat-info { flex: 1; }
+
+      .stat-label {
+        font-size: 11px;
+        letter-spacing: 2px;
+        color: #94a3b8;
+        text-transform: uppercase;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+
+      .stat-value {
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 42px;
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: -1px;
+      }
+
+      .stat-card.hr   .stat-value { color: #dc2626; }
+      .stat-card.temp .stat-value { color: #d97706; }
+      .stat-card.spo  .stat-value { color: #2563eb; }
+      .stat-card.bp   .stat-value { color: #9333ea; }
+
+      .stat-unit {
+        font-size: 12px;
+        color: #94a3b8;
+        margin-top: 4px;
+        font-family: 'Share Tech Mono', monospace;
+        letter-spacing: 1px;
+      }
+
+      .chart-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 18px;
+      }
+
+      .chart-card {
+        background: #ffffff;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      }
+
+      .chart-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        border-bottom: 1px solid #f1f5f9;
+        background: #f8fafc;
+      }
+
+      .chart-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: #475569;
+      }
+
+      .chart-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+      .chart-card.hr-card   .chart-dot { background: #ef4444; }
+      .chart-card.temp-card .chart-dot { background: #f59e0b; }
+      .chart-card.spo-card  .chart-dot { background: #3b82f6; }
+      .chart-card.bp-card   .chart-dot { background: #a855f7; }
+
+      .chart-badge {
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 11px;
+        color: #94a3b8;
+        background: #e2e8f0;
+        padding: 3px 10px;
+        border-radius: 6px;
+        letter-spacing: 1px;
+      }
+
+      .chart-body { padding: 16px; height: 190px; }
+      .chart-body canvas { width: 100% !important; height: 100% !important; }
+
+      .risk-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: #ffffff;
+        border: 1.5px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 16px 28px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      }
+
+      .risk-left { display: flex; align-items: center; gap: 14px; }
+
+      .risk-label {
+        font-size: 11px;
+        letter-spacing: 2px;
+        color: #94a3b8;
+        text-transform: uppercase;
+        font-weight: 600;
+        margin-bottom: 3px;
+      }
+
+      #risk-value {
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 2px;
+        color: #16a34a;
+        transition: color 0.3s;
+      }
+
+      .risk-indicator {
+        width: 14px; height: 14px;
+        border-radius: 50%;
+        background: #22c55e;
+        border: 2px solid #bbf7d0;
+        transition: background 0.3s, border-color 0.3s;
+      }
+
+      .risk-right {
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 11px;
+        color: #cbd5e1;
+        letter-spacing: 1px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        padding: 5px 12px;
+        border-radius: 8px;
+      }
+    </style>
+  </head>
+
+  <body>
+
+    <header>
+      <div class="header-left">
+        <div class="logo-icon">🫀</div>
+        <div class="header-title">
+          <h1>Health Monitor</h1>
+          <p>REAL-TIME PATIENT SURVEILLANCE SYSTEM</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="live-badge">
+          <div class="live-dot"></div>
+          LIVE
+        </div>
+        <div id="clock">--:--:--</div>
+      </div>
+    </header>
+
+    <div id="alert-banner">
+      🚨 &nbsp; CRITICAL PATIENT — IMMEDIATE ACTION REQUIRED &nbsp; 🚨
+    </div>
+
+    <main>
+
+      <div class="stat-strip">
+        <div class="stat-card hr">
+          <div class="stat-icon">❤️</div>
+          <div class="stat-info">
+            <div class="stat-label">Heart Rate</div>
+            <div class="stat-value" id="val-hr">--</div>
+            <div class="stat-unit">beats / min</div>
+          </div>
+        </div>
+        <div class="stat-card temp">
+          <div class="stat-icon">🌡️</div>
+          <div class="stat-info">
+            <div class="stat-label">Temperature</div>
+            <div class="stat-value" id="val-temp">--</div>
+            <div class="stat-unit">°F</div>
+          </div>
+        </div>
+        <div class="stat-card spo">
+          <div class="stat-icon">💧</div>
+          <div class="stat-info">
+            <div class="stat-label">SpO₂</div>
+            <div class="stat-value" id="val-spo">--</div>
+            <div class="stat-unit">% oxygen saturation</div>
+          </div>
+        </div>
+        <div class="stat-card bp">
+          <div class="stat-icon">🩸</div>
+          <div class="stat-info">
+            <div class="stat-label">Blood Pressure</div>
+            <div class="stat-value" id="val-bp">-- / --</div>
+            <div class="stat-unit">mmHg  SYS / DIA</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-grid">
+        <div class="chart-card hr-card">
+          <div class="chart-header">
+            <div class="chart-title"><div class="chart-dot"></div>Heart Rate</div>
+            <div class="chart-badge">BPM</div>
+          </div>
+          <div class="chart-body"><canvas id="hrChart"></canvas></div>
+        </div>
+
+        <div class="chart-card temp-card">
+          <div class="chart-header">
+            <div class="chart-title"><div class="chart-dot"></div>Temperature</div>
+            <div class="chart-badge">°F</div>
+          </div>
+          <div class="chart-body"><canvas id="tempChart"></canvas></div>
+        </div>
+
+        <div class="chart-card spo-card">
+          <div class="chart-header">
+            <div class="chart-title"><div class="chart-dot"></div>SpO₂</div>
+            <div class="chart-badge">%</div>
+          </div>
+          <div class="chart-body"><canvas id="spoChart"></canvas></div>
+        </div>
+
+        <div class="chart-card bp-card">
+          <div class="chart-header">
+            <div class="chart-title"><div class="chart-dot"></div>Blood Pressure</div>
+            <div class="chart-badge">mmHg</div>
+          </div>
+          <div class="chart-body"><canvas id="bpChart"></canvas></div>
+        </div>
+      </div>
+
+      <div class="risk-bar">
+        <div class="risk-left">
+          <div class="risk-indicator" id="risk-indicator"></div>
+          <div>
+            <div class="risk-label">Risk Assessment</div>
+            <div id="risk-value">AWAITING DATA...</div>
+          </div>
+        </div>
+        <div class="risk-right">AUTO-REFRESH · 5s INTERVAL</div>
+      </div>
+
+    </main>
+
+    <script>
+
+      setInterval(() => {
+        document.getElementById('clock').textContent = new Date().toLocaleTimeString();
+      }, 1000);
+
+      Chart.defaults.color = '#94a3b8';
+      Chart.defaults.borderColor = '#e2e8f0';
+
+      const chartOptions = (color) => ({
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 300 },
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            ticks: { font: { family: 'Share Tech Mono', size: 10 }, maxRotation: 0, color: '#94a3b8' },
+            grid: { color: '#f1f5f9' },
+            border: { color: '#e2e8f0' }
+          },
+          y: {
+            ticks: { font: { family: 'Share Tech Mono', size: 10 }, color: '#94a3b8' },
+            grid: { color: '#f1f5f9' },
+            border: { color: '#e2e8f0' }
+          },
+        },
+        elements: {
+          line: {
+            borderColor: color,
+            borderWidth: 2.5,
+            tension: 0.4,
+            fill: true,
+            backgroundColor: color.replace('rgb(', 'rgba(').replace(')', ', 0.07)'),
+          },
+          point: { radius: 3, backgroundColor: color, borderColor: '#fff', borderWidth: 2 },
+        },
+      });
+
+      function createChart(id, label, color) {
+        return new Chart(document.getElementById(id), {
+          type: 'line',
+          data: { labels: [], datasets: [{ label, data: [] }] },
+          options: chartOptions(color),
+        });
+      }
+
+      let bpChart = new Chart(document.getElementById('bpChart'), {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            { label: 'Systolic BP',  data: [], borderColor: 'rgb(236,72,153)', borderWidth: 2.5, tension: 0.4, fill: false, pointBackgroundColor: 'rgb(236,72,153)', pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 3 },
+            { label: 'Diastolic BP', data: [], borderColor: 'rgb(168,85,247)', borderWidth: 2.5, tension: 0.4, fill: false, pointBackgroundColor: 'rgb(168,85,247)', pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 3 },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 300 },
+          plugins: {
+            legend: {
+              display: true,
+              labels: {
+                color: '#64748b',
+                font: { family: 'Share Tech Mono', size: 11 },
+                boxWidth: 12,
+                padding: 16,
+              },
+            },
+          },
+          scales: {
+            x: {
+              ticks: { font: { family: 'Share Tech Mono', size: 10 }, maxRotation: 0, color: '#94a3b8' },
+              grid: { color: '#f1f5f9' },
+              border: { color: '#e2e8f0' }
+            },
+            y: {
+              ticks: { font: { family: 'Share Tech Mono', size: 10 }, color: '#94a3b8' },
+              grid: { color: '#f1f5f9' },
+              border: { color: '#e2e8f0' }
+            },
+          },
+        },
+      });
+
+      let hrChart   = createChart('hrChart',   'Heart Rate',  'rgb(239,68,68)');
+      let tempChart = createChart('tempChart', 'Temperature', 'rgb(245,158,11)');
+      let spoChart  = createChart('spoChart',  'SpO2',        'rgb(59,130,246)');
+
+      function toFahrenheit(celsius) {
+        return (celsius * 9 / 5) + 32;
+      }
+
+      function updateChart(chart, value) {
+        chart.data.labels.push(new Date().toLocaleTimeString());
+        chart.data.datasets[0].data.push(value);
+        if (chart.data.labels.length > 15) {
+          chart.data.labels.shift();
+          chart.data.datasets[0].data.shift();
+        }
+        chart.update();
+      }
+
+      function updateBP(sys, dia) {
+        bpChart.data.labels.push(new Date().toLocaleTimeString());
+        bpChart.data.datasets[0].data.push(sys);
+        bpChart.data.datasets[1].data.push(dia);
+        if (bpChart.data.labels.length > 15) {
+          bpChart.data.labels.shift();
+          bpChart.data.datasets[0].data.shift();
+          bpChart.data.datasets[1].data.shift();
+        }
+        bpChart.update();
+      }
+
+      function fetchData() {
+        fetch("http://127.0.0.1:8000/live")
+          .then(res => res.json())
+          .then(data => {
+            const heart_rate = parseInt(data.heart_rate);
+            const tempC      = parseFloat(data.temp);
+            const tempF      = toFahrenheit(tempC);
+            const spo2       = parseInt(data.spo2);
+            const sys        = parseInt(data.sys);
+            const dia        = parseInt(data.dia);
+            const risk       = data.risk;
+
+            updateChart(hrChart,   heart_rate);
+            updateChart(tempChart, tempF);
+            updateChart(spoChart,  spo2);
+            updateBP(sys, dia);
+
+            document.getElementById('val-hr').textContent   = heart_rate;
+            document.getElementById('val-temp').textContent = tempF.toFixed(1);
+            document.getElementById('val-spo').textContent  = spo2;
+            document.getElementById('val-bp').textContent   = `${sys} / ${dia}`;
+
+            const riskEl = document.getElementById('risk-value');
+            const dotEl  = document.getElementById('risk-indicator');
+            const banner = document.getElementById('alert-banner');
+
+            riskEl.textContent = risk;
+
+            if (risk === 'CRITICAL RISK') {
+              riskEl.style.color     = '#b91c1c';
+              dotEl.style.background = '#ef4444';
+              dotEl.style.borderColor = '#fca5a5';
+              banner.classList.add('show');
+            } else if (risk === 'HIGH RISK') {
+              riskEl.style.color     = '#c2410c';
+              dotEl.style.background = '#f97316';
+              dotEl.style.borderColor = '#fed7aa';
+              banner.classList.remove('show');
+            } else if (risk === 'MEDIUM RISK') {
+              riskEl.style.color     = '#b45309';
+              dotEl.style.background = '#f59e0b';
+              dotEl.style.borderColor = '#fde68a';
+              banner.classList.remove('show');
+            } else {
+              riskEl.style.color     = '#16a34a';
+              dotEl.style.background = '#22c55e';
+              dotEl.style.borderColor = '#bbf7d0';
+              banner.classList.remove('show');
+            }
+          })
+          .catch(err => console.log('Fetch error:', err));
+      }
+
+      setInterval(fetchData, 5000);
+      fetchData();
+    </script>
+  </body>
+</html>
