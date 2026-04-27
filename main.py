@@ -3,11 +3,16 @@ from fastapi.middleware.cors import CORSMiddleware
 import requests
 from pymongo import MongoClient
 from datetime import datetime, timezone
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI()
 
 # ─────────────────────────────────────────────
-# CORS (allow frontend access)
+# CORS
 # ─────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
@@ -18,10 +23,19 @@ app.add_middleware(
 )
 
 # ─────────────────────────────────────────────
+# ENV VARIABLES (FIXED)
+# ─────────────────────────────────────────────
+MONGO_URI   = os.getenv("MONGO_URI")
+CHANNEL_ID  = os.getenv("CHANNEL_ID")
+READ_API_KEY = os.getenv("READ_API_KEY")
+
+# Safety check
+if not MONGO_URI or not CHANNEL_ID or not READ_API_KEY:
+    raise ValueError("Missing environment variables")
+
+# ─────────────────────────────────────────────
 # MongoDB
 # ─────────────────────────────────────────────
-MONGO_URI = "mongodb+srv://aistethoscope:qYjlS5RuXheG2Izt@cluster0.8i7grhm.mongodb.net/?appName=Cluster0"
-
 try:
     client = MongoClient(MONGO_URI)
     db = client["ai_stethoscope"]
@@ -32,13 +46,7 @@ except Exception as e:
     collection = None
 
 # ─────────────────────────────────────────────
-# ThingSpeak Config
-# ─────────────────────────────────────────────
-CHANNEL_ID = "3307509"
-READ_API_KEY = "PWRZ5YE4XVFELF9N"
-
-# ─────────────────────────────────────────────
-# Valid ranges
+# VALID RANGES
 # ─────────────────────────────────────────────
 VALID_RANGES = {
     "heart_rate": (20, 300),
@@ -51,10 +59,10 @@ VALID_RANGES = {
 def validate_vitals(hr, temp, spo2, sys, dia):
     checks = {
         "heart_rate": hr,
-        "temp":       temp,
-        "spo2":       spo2,
-        "sys":        sys,
-        "dia":        dia,
+        "temp": temp,
+        "spo2": spo2,
+        "sys": sys,
+        "dia": dia,
     }
     for field, value in checks.items():
         lo, hi = VALID_RANGES[field]
@@ -63,7 +71,7 @@ def validate_vitals(hr, temp, spo2, sys, dia):
     return True, None
 
 # ─────────────────────────────────────────────
-# Risk Logic
+# RISK LOGIC
 # ─────────────────────────────────────────────
 def calculate_risk(hr, temp, spo2, sys, dia):
     score = 0
@@ -94,14 +102,14 @@ def calculate_risk(hr, temp, spo2, sys, dia):
         return "LOW RISK"
 
 # ─────────────────────────────────────────────
-# Root route (for testing deployment)
+# ROOT ROUTE
 # ─────────────────────────────────────────────
 @app.get("/")
 def home():
     return {"status": "Backend running successfully"}
 
 # ─────────────────────────────────────────────
-# Main API
+# MAIN API
 # ─────────────────────────────────────────────
 @app.get("/live")
 def live():
@@ -110,39 +118,32 @@ def live():
         f"/feeds/last.json?api_key={READ_API_KEY}"
     )
 
-    # ── Fetch from ThingSpeak ──
     try:
         res = requests.get(url, timeout=10)
         res.raise_for_status()
         data = res.json()
     except Exception as e:
-        return {
-            "error": "ThingSpeak connection failed",
-            "details": str(e)
-        }
+        return {"error": "ThingSpeak failed", "details": str(e)}
 
-    # ── Parse data ──
     try:
-        hr   = float(data.get("field1", 0))
-        temp = float(data.get("field2", 0))
-        spo2 = float(data.get("field3", 0))
-        sys  = float(data.get("field4", 0))
-        dia  = float(data.get("field5", 0))
-    except Exception:
-        return {"error": "Invalid sensor data format"}
+        hr   = float(data.get("field1") or 0)
+        temp = float(data.get("field2") or 0)
+        spo2 = float(data.get("field3") or 0)
+        sys  = float(data.get("field4") or 0)
+        dia  = float(data.get("field5") or 0)
+    except:
+        return {"error": "Invalid sensor format"}
 
-    # ── Validate ──
+    # ⚠️ Ignore empty readings instead of breaking UI
+    if hr == 0 or temp == 0 or spo2 == 0:
+        return {"error": "Waiting for sensor data..."}
+
     ok, err = validate_vitals(hr, temp, spo2, sys, dia)
     if not ok:
         return {"error": f"Invalid data: {err}"}
 
-    # ── Risk ──
     risk = calculate_risk(hr, temp, spo2, sys, dia)
 
-    if risk == "CRITICAL RISK":
-        print("🚨 CRITICAL ALERT")
-
-    # ── Save to DB (safe) ──
     record = {
         "heart_rate": hr,
         "temp": temp,
@@ -157,14 +158,6 @@ def live():
         try:
             collection.insert_one(record)
         except Exception as e:
-            print("⚠️ Mongo insert failed:", e)
+            print("DB insert error:", e)
 
-    # ── Return to frontend ──
-    return {
-        "heart_rate": hr,
-        "temp": temp,
-        "spo2": spo2,
-        "sys": sys,
-        "dia": dia,
-        "risk": risk
-    }
+    return record

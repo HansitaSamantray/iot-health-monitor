@@ -2,4 +2,4 @@ fastapi
 uvicorn
 requests
 pymongo
-dnspython
+python-dotenv
