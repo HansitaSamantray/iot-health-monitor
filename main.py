@@ -6,32 +6,49 @@ from datetime import datetime, timezone
 
 app = FastAPI()
 
+# ─────────────────────────────────────────────
+# CORS (allow frontend access)
+# ─────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"], 
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# ─────────────────────────────────────────────
+# MongoDB
+# ─────────────────────────────────────────────
 MONGO_URI = "mongodb+srv://aistethoscope:qYjlS5RuXheG2Izt@cluster0.8i7grhm.mongodb.net/?appName=Cluster0"
-client = MongoClient(MONGO_URI)
-db = client["ai_stethoscope"]
-collection = db["patients"]
 
+try:
+    client = MongoClient(MONGO_URI)
+    db = client["ai_stethoscope"]
+    collection = db["patients"]
+    print("MongoDB connected")
+except Exception as e:
+    print("MongoDB connection failed:", e)
+    collection = None
+
+# ─────────────────────────────────────────────
+# ThingSpeak Config
+# ─────────────────────────────────────────────
 CHANNEL_ID = "3307509"
 READ_API_KEY = "PWRZ5YE4XVFELF9N"
 
-# ── Physiologically valid ranges ──────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# Valid ranges
+# ─────────────────────────────────────────────
 VALID_RANGES = {
-    "heart_rate": (20, 300),     # bpm
-    "temp":       (30.0, 45.0),  # °C  (86–113 °F)
-    "spo2":       (50, 100),     # %
-    "sys":        (50, 300),     # mmHg
-    "dia":        (20, 200),     # mmHg
+    "heart_rate": (20, 300),
+    "temp":       (30.0, 45.0),
+    "spo2":       (50, 100),
+    "sys":        (50, 300),
+    "dia":        (20, 200),
 }
 
 def validate_vitals(hr, temp, spo2, sys, dia):
-    """Return (ok, error_message). Rejects readings outside plausible ranges."""
     checks = {
         "heart_rate": hr,
         "temp":       temp,
@@ -42,11 +59,15 @@ def validate_vitals(hr, temp, spo2, sys, dia):
     for field, value in checks.items():
         lo, hi = VALID_RANGES[field]
         if not (lo <= value <= hi):
-            return False, f"Invalid {field}: {value} (expected {lo}–{hi})"
+            return False, f"{field}: {value} (expected {lo}–{hi})"
     return True, None
 
+# ─────────────────────────────────────────────
+# Risk Logic
+# ─────────────────────────────────────────────
 def calculate_risk(hr, temp, spo2, sys, dia):
     score = 0
+
     if hr > 140:   score += 3
     elif hr > 120: score += 2
     elif hr > 100: score += 1
@@ -63,11 +84,25 @@ def calculate_risk(hr, temp, spo2, sys, dia):
     elif sys > 140 or dia > 90:  score += 2
     elif sys > 120 or dia > 80:  score += 1
 
-    if score >= 8:   return "CRITICAL RISK"
-    elif score >= 5: return "HIGH RISK"
-    elif score >= 2: return "MEDIUM RISK"
-    else:            return "LOW RISK"
+    if score >= 8:
+        return "CRITICAL RISK"
+    elif score >= 5:
+        return "HIGH RISK"
+    elif score >= 2:
+        return "MEDIUM RISK"
+    else:
+        return "LOW RISK"
 
+# ─────────────────────────────────────────────
+# Root route (for testing deployment)
+# ─────────────────────────────────────────────
+@app.get("/")
+def home():
+    return {"status": "Backend running successfully"}
+
+# ─────────────────────────────────────────────
+# Main API
+# ─────────────────────────────────────────────
 @app.get("/live")
 def live():
     url = (
@@ -75,51 +110,61 @@ def live():
         f"/feeds/last.json?api_key={READ_API_KEY}"
     )
 
+    # ── Fetch from ThingSpeak ──
     try:
-        res  = requests.get(url, timeout=10)
+        res = requests.get(url, timeout=10)
         res.raise_for_status()
         data = res.json()
     except Exception as e:
-        return {"error": f"Failed to reach ThingSpeak: {e}"}
+        return {
+            "error": "ThingSpeak connection failed",
+            "details": str(e)
+        }
 
-    # ── Parse fields ──────────────────────────────────────────────────────────
+    # ── Parse data ──
     try:
-        hr   = float(data["field1"])
-        temp = float(data["field2"])   
-        spo2 = float(data["field3"])
-        sys  = float(data["field4"])
-        dia  = float(data["field5"])
-    except (KeyError, TypeError, ValueError):
-        return {"error": "Missing or non-numeric sensor fields"}
+        hr   = float(data.get("field1", 0))
+        temp = float(data.get("field2", 0))
+        spo2 = float(data.get("field3", 0))
+        sys  = float(data.get("field4", 0))
+        dia  = float(data.get("field5", 0))
+    except Exception:
+        return {"error": "Invalid sensor data format"}
 
-    # ── Validate ranges — reject junk readings ────────────────────────────────
+    # ── Validate ──
     ok, err = validate_vitals(hr, temp, spo2, sys, dia)
     if not ok:
-        return {"error": f"Sensor data out of range: {err}"}
+        return {"error": f"Invalid data: {err}"}
 
-    # ── Risk scoring (uses °C internally — thresholds are in °C) ─────────────
+    # ── Risk ──
     risk = calculate_risk(hr, temp, spo2, sys, dia)
 
     if risk == "CRITICAL RISK":
-        print("🚨 CRITICAL ALERT — immediate attention required!")
+        print("🚨 CRITICAL ALERT")
 
+    # ── Save to DB (safe) ──
     record = {
         "heart_rate": hr,
-        "temp":       temp,   
-        "spo2":       spo2,
-        "sys":        sys,
-        "dia":        dia,
-        "risk":       risk,
-        "timestamp":  datetime.now(timezone.utc),
+        "temp": temp,
+        "spo2": spo2,
+        "sys": sys,
+        "dia": dia,
+        "risk": risk,
+        "timestamp": datetime.now(timezone.utc)
     }
 
-    collection.insert_one(record.copy())
+    if collection:
+        try:
+            collection.insert_one(record)
+        except Exception as e:
+            print("⚠️ Mongo insert failed:", e)
 
+    # ── Return to frontend ──
     return {
         "heart_rate": hr,
-        "temp":       temp,
-        "spo2":       spo2,
-        "sys":        sys,
-        "dia":        dia,
-        "risk":       risk,
+        "temp": temp,
+        "spo2": spo2,
+        "sys": sys,
+        "dia": dia,
+        "risk": risk
     }

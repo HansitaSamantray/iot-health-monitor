@@ -523,7 +523,7 @@
       }
 
       function fetchData() {
-        fetch("http://127.0.0.1:8000/live")
+        fetch("https://iot-health-monitor-b99e.onrender.com")
           .then(res => res.json())
           .then(data => {
             const heart_rate = parseInt(data.heart_rate);
